@@ -48,3 +48,4 @@ if __name__ == "__main__":
 # Navigate to the directory where your Streamlit script is located.
 # Run the following command:
 #  streamlit run /home/nachiketa/Documents/Workspaces/LLMs/zoomcamp/openai/flant5.py
+# Open a web browser and navigate to http://localhost:8501/
