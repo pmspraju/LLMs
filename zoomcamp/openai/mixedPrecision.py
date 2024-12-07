@@ -3,8 +3,14 @@ import os
 import gc
 import json
 import minisearch
+
+# FlanT5
 from transformers import T5Tokenizer, TFT5ForConditionalGeneration
 from transformers import AutoConfig, TFAutoModelForSeq2SeqLM, T5Tokenizer
+
+# Mistral
+from transformers import AutoTokenizer, TFAutoModelForCausalLM
+
 from tensorflow.keras import mixed_precision
 
 # Rag model class
