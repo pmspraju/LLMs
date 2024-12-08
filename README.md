@@ -52,3 +52,12 @@ docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=
 ### Check the docker running processes 
 ``` docker ps -a ```
 
+### Remove the old container
+``` docker rm elasticsearch ```
+
+### If container is still running, stop it first
+```
+docker stop elasticsearch
+docker rm elasticsearch
+```
+
