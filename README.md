@@ -38,7 +38,7 @@ newgrp docker
 ### Pull the image
 ``` docker pull docker.elastic.co/elasticsearch/elasticsearch:8.12.0 ```
 
-### tag the immage
+### tag the image
 ``` docker tag docker.elastic.co/elasticsearch/elasticsearch:8.12.0 elasticsearch:latest ```
 
 ## available images 
