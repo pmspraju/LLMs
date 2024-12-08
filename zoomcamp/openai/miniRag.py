@@ -82,7 +82,7 @@ def rag(query):
     return answer
 
 # Load the data
-data_path = r'/home/nachiketa/Documents/Workspaces/LLM/zoomcamp/data'
+data_path = r'/home/nachiketa/Documents/Workspaces/LLMs/zoomcamp/data'
 file = os.path.join(data_path, 'documents.json')
 docs = readjson(file)
 

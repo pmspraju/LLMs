@@ -38,7 +38,17 @@ newgrp docker
 ### Pull the image
 ``` docker pull docker.elastic.co/elasticsearch/elasticsearch:8.12.0 ```
 
+### tag the immage
+``` docker tag docker.elastic.co/elasticsearch/elasticsearch:8.12.0 elasticsearch:latest ```
+
+## available images 
+``` docker images ```
+
 ### Run the image
 ```
-docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:8.12.0
 ```
+
+### Check the docker running processes 
+``` docker ps -a ```
+

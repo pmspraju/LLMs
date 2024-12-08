@@ -7,6 +7,7 @@ import minisearch
 # FlanT5
 from transformers import T5Tokenizer, TFT5ForConditionalGeneration
 from transformers import AutoConfig, TFAutoModelForSeq2SeqLM, T5Tokenizer
+from elasticsearch import Elasticsearch
 
 # Mistral
 from transformers import AutoTokenizer, TFAutoModelForCausalLM
@@ -16,9 +17,10 @@ from tensorflow.keras import mixed_precision
 # Rag model class
 class ragModel:
 
-    def __init__(self, file, query):
+    def __init__(self, file, query, elastic=False):
         self.file = file
         self.query = query
+        self.elastic = elastic
         docs = self.readjson()
         index = minisearch.Index(
             text_fields=["question", "text", "section"],
@@ -26,6 +28,25 @@ class ragModel:
         )
         index.fit(docs)
         self.index = index
+        if self.elastic:
+            self.es_client = Elasticsearch('http://localhost:9200')
+            self.index_settings = {
+                "settings": {
+                    "number_of_shards": 1,
+                    "number_of_replicas": 0
+                },
+                "mappings": {
+                    "properties": {
+                        "text": {"type": "text"},
+                        "section": {"type": "text"},
+                        "question": {"type": "text"},
+                        "course": {"type": "keyword"}
+                    }
+                }
+            }
+            self.index_name = "course-questions"
+            if not self.es_client.indices.exists(index=self.index_name):
+                self.es_client.indices.create(index=self.index_name, body=self.index_settings)
 
     def readjson(self):
 
@@ -41,16 +62,51 @@ class ragModel:
                 documents.append(doc)
         return documents
 
-    def search(self):
-        boost = {'question': 3.0, 'section': 0.5}
-        index = self.index
+    def elastic_search(self):
         query = self.query
-        results = index.search(
-            query=query,
-            filter_dict={'course': 'data-engineering-zoomcamp'},
-            boost_dict=boost,
-            num_results=5
-        )
+        search_query = {
+            "size": 5,
+            "query": {
+                "bool": {
+                    "must": {
+                        "multi_match": {
+                            "query": query,
+                            "fields": ["question^3", "text", "section"],
+                            "type": "best_fields"
+                        }
+                    },
+                    "filter": {
+                        "term": {
+                            "course": "data-engineering-zoomcamp"
+                        }
+                    }
+                }
+            }
+        }
+
+        response = self.es_client.search(index=self.index_name, body=search_query)
+
+        result_docs = []
+
+        for hit in response['hits']['hits']:
+            result_docs.append(hit['_source'])
+
+        return result_docs
+
+    def search(self):
+        if self.elastic:
+            print("Using Elastic Search")
+            results = self.elastic_search()
+        else:
+            boost = {'question': 3.0, 'section': 0.5}
+            index = self.index
+            query = self.query
+            results = index.search(
+                query=query,
+                filter_dict={'course': 'data-engineering-zoomcamp'},
+                boost_dict=boost,
+                num_results=5
+            )
 
         return results
 

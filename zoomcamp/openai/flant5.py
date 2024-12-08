@@ -39,7 +39,7 @@ if __name__ == "__main__":
 
     if st.button("Ask"):
         with st.spinner('Processing...'):
-            output = ragModel(file, user_input).rag()
+            output = ragModel(file, user_input, True).rag()
             st.success("Completed!")
             st.write(output)
 
