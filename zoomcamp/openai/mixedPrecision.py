@@ -97,6 +97,7 @@ class ragModel:
         if self.elastic:
             print("Using Elastic Search")
             results = self.elastic_search()
+            print(results)
         else:
             boost = {'question': 3.0, 'section': 0.5}
             index = self.index

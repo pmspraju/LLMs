@@ -21,7 +21,11 @@ def loadoc():
     for row in sheet.iter_rows(min_row=2, values_only=True):
         row_dict = {}
         for header, value in zip(headers, row):
-            row_dict[header] = value
+            #row_dict[header] = value
+            row_dict['text'] = row[2]
+            row_dict['section'] = row[0]
+            row_dict['question'] = row[1]
+
         data.append(row_dict)
 
     json_dict = {"course": "data-engineering-zoomcamp", "documents": data}
@@ -52,7 +56,7 @@ if __name__ == "__main__":
 
     # set the paths and environment variables
     file = setPaths()
-    
+
     # clear the cache
     gc.collect()
 
