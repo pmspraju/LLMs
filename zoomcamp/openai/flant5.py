@@ -1,9 +1,38 @@
 import os
 import gc
 import streamlit as st
-import time
+import json
+import pandas as pd
+import openpyxl
 from mixedPrecision import ragModel
 
+def loadoc():
+    # Load the data
+    data_path = r'/home/nachiketa/Documents/Workspaces/LLMs/zoomcamp/data'
+    file = os.path.join(data_path, 'oldlist.xlsx')
+
+    # Load the Excel file
+    wb = openpyxl.load_workbook(file)
+    sheet = wb.active
+
+    headers = ['section','question','text']
+
+    data = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        row_dict = {}
+        for header, value in zip(headers, row):
+            row_dict[header] = value
+        data.append(row_dict)
+
+    json_dict = {"course": "data-engineering-zoomcamp", "documents": data}
+    json_data = []
+    json_data.append(json_dict)
+
+    json_file = os.path.join(data_path, 'oc.json')
+    with open(json_file, 'w', encoding='utf-8') as f:
+        json.dump(json_data, f, indent=4, ensure_ascii=False)
+
+    return json_file
 
 def setPaths():
 
@@ -13,13 +42,17 @@ def setPaths():
     data_path = r'/home/nachiketa/Documents/Workspaces/LLMs/zoomcamp/data'
     file = os.path.join(data_path, 'documents.json')
 
+    output_file = os.path.join(data_path, 'oc.json')
+    if not os.path.exists(output_file):
+        file = loadoc()
+
     return file
 
 if __name__ == "__main__":
 
     # set the paths and environment variables
     file = setPaths()
-
+    
     # clear the cache
     gc.collect()
 
