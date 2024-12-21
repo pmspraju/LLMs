@@ -49,6 +49,8 @@ def setPaths():
     output_file = os.path.join(data_path, 'oc.json')
     if not os.path.exists(output_file):
         file = loadoc()
+    else:
+        file = output_file
 
     return file
 

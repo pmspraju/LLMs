@@ -7,7 +7,7 @@ import minisearch
 # FlanT5
 from transformers import T5Tokenizer, TFT5ForConditionalGeneration
 from transformers import AutoConfig, TFAutoModelForSeq2SeqLM, T5Tokenizer
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, helpers
 
 # Mistral
 from transformers import AutoTokenizer, TFAutoModelForCausalLM
@@ -22,14 +22,17 @@ class ragModel:
         self.query = query
         self.elastic = elastic
         docs = self.readjson()
-        index = minisearch.Index(
-            text_fields=["question", "text", "section"],
-            keyword_fields=["course"]
-        )
-        index.fit(docs)
-        self.index = index
+
+        # Generate actions for bulk indexing
+        def generate_actions(docs):
+            for doc in docs:
+                yield {
+                    "_index": self.index_name,
+                    "_source": doc
+                }
+
         if self.elastic:
-            self.es_client = Elasticsearch('http://localhost:9200')
+            self.es_client = Elasticsearch('http://localhost:9200/')
             self.index_settings = {
                 "settings": {
                     "number_of_shards": 1,
@@ -45,8 +48,33 @@ class ragModel:
                 }
             }
             self.index_name = "course-questions"
-            if not self.es_client.indices.exists(index=self.index_name):
-                self.es_client.indices.create(index=self.index_name, body=self.index_settings)
+
+            if self.es_client.indices.exists(index=self.index_name):
+                self.es_client.indices.delete(index=self.index_name)
+
+            self.es_client.indices.create(index=self.index_name, body=self.index_settings)
+            #self.es_client.indices.create(index=self.index_name, mappings=self.index_settings["mappings"])
+
+            # Index the documents without batches
+            #success, failed = helpers.bulk(self.es_client, generate_actions(docs))
+            #print(f"Successfully indexed {success} documents")
+
+            # Index the documents with batches
+            batch_size=1000
+            for i in range(0, len(docs), batch_size):
+                batch = docs[i:i + batch_size]
+                success, failed = helpers.bulk(self.es_client, generate_actions(batch))
+                print(f"Batch {i // batch_size + 1}: Indexed {success} documents")
+
+            #self.es_client.index(index=self.index_name, document=docs)
+        else:
+
+            index = minisearch.Index(
+                text_fields=["question", "text", "section"],
+                keyword_fields=["course"]
+            )
+            index.fit(docs)
+            self.index = index
 
     def readjson(self):
 
@@ -57,9 +85,10 @@ class ragModel:
         documents = []
 
         for course_dict in data_raw:
-            for doc in course_dict['documents']:
+            for ind, doc in enumerate(course_dict['documents']):
                 doc['course'] = course_dict['course']
                 documents.append(doc)
+
         return documents
 
     def elastic_search(self):
@@ -97,7 +126,6 @@ class ragModel:
         if self.elastic:
             print("Using Elastic Search")
             results = self.elastic_search()
-            print(results)
         else:
             boost = {'question': 3.0, 'section': 0.5}
             index = self.index
@@ -114,6 +142,7 @@ class ragModel:
     def build_prompt(self):
         query = self.query
         search_results = self.search()
+        print('***************'); print(search_results)
         prompt_template = """
         You're a course teaching assistant. Answer the QUESTION based on the CONTEXT from the FAQ database.
         Use only the facts from the CONTEXT when answering the QUESTION.
