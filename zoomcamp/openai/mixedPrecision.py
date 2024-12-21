@@ -399,6 +399,7 @@ class mixedPrecisionModel:
             print("Consider using a smaller model or different approach")
             return None
 
+# build an elastic search client
 class buildElasticSearchClient:
     def __init__(self, docs, index_name):
         self.es_client = Elasticsearch('http://localhost:9200/')
