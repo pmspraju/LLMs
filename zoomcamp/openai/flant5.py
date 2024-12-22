@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     # Set the query
     # query = 'the course has already started, can I still enroll?'
-    #query = 'where are the main videos are stored'
+    # query = 'where are the main videos are stored'
     # query = 'when do i get the certificate'
     # query = 'how do I run kafka?'
 
