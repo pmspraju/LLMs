@@ -29,12 +29,12 @@ class ragModel:
         self.index_name = "course-questions"
 
         if self.elastic:
-            self.es = buildElasticSearchClient(docs, self.index_name)
+            #self.es = buildElasticSearchClient(docs, self.index_name)
             #self.es_client = self.es..createBulkIndex()
-            self.es_client = self.es.createBatchIndex()
+            #self.es_client = self.es.createBatchIndex()
 
-            #self.vs = vectorSearchClient(docs, self.index_name)
-            #self.vs_client = self.vs.createBatchIndex()
+            self.vs = vectorSearchClient(docs, self.index_name)
+            self.vs_client = self.vs.createBatchIndex()
 
         else:
 
@@ -63,8 +63,8 @@ class ragModel:
     def search(self):
         if self.elastic:
             print("Using Elastic Search")
-            results = self.es.elastic_search(self.es_client, self.query)
-            #results = self.vs.vector_search_knn(self.query)
+            #results = self.es.elastic_search(self.es_client, self.query)
+            results = self.vs.vector_search_knn(self.query)
         else:
             boost = {'question': 3.0, 'section': 0.5}
             index = self.index
