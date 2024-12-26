@@ -5,7 +5,8 @@ import json
 
 import minisearch
 from elasticsearchClient import buildElasticSearchClient
-#from elasticsearch import Elasticsearch, helpers
+from vectorSearch import vectorSearchClient
+
 
 # FlanT5
 from transformers import T5Tokenizer, TFT5ForConditionalGeneration
@@ -14,7 +15,8 @@ from transformers import AutoConfig, TFAutoModelForSeq2SeqLM, T5Tokenizer
 # Mistral
 from transformers import AutoTokenizer, TFAutoModelForCausalLM
 
-from tensorflow.keras import mixed_precision
+#from tensorflow.keras import mixed_precision
+from tensorflow.python.keras import mixed_precision
 
 # Rag model class
 class ragModel:
@@ -27,9 +29,12 @@ class ragModel:
         self.index_name = "course-questions"
 
         if self.elastic:
+            self.es = buildElasticSearchClient(docs, self.index_name)
+            #self.es_client = self.es..createBulkIndex()
+            self.es_client = self.es.createBatchIndex()
 
-            self.es_client = buildElasticSearchClient(docs, self.index_name).createBatchIndex()
-            #self.es_client = buildElasticSearchClient(docs, self.index_name).createBulkIndex()
+            #self.vs = vectorSearchClient(docs, self.index_name)
+            #self.vs_client = self.vs.createBatchIndex()
 
         else:
 
@@ -55,41 +60,11 @@ class ragModel:
 
         return documents
 
-    def elastic_search(self):
-        query = self.query
-        search_query = {
-            "size": 5,
-            "query": {
-                "bool": {
-                    "must": {
-                        "multi_match": {
-                            "query": query,
-                            "fields": ["question^3", "text", "section"],
-                            "type": "best_fields"
-                        }
-                    },
-                    "filter": {
-                        "term": {
-                            "course": "data-engineering-zoomcamp"
-                        }
-                    }
-                }
-            }
-        }
-
-        response = self.es_client.search(index=self.index_name, body=search_query)
-
-        result_docs = []
-
-        for hit in response['hits']['hits']:
-            result_docs.append(hit['_source'])
-
-        return result_docs
-
     def search(self):
         if self.elastic:
             print("Using Elastic Search")
-            results = self.elastic_search()
+            results = self.es.elastic_search(self.es_client, self.query)
+            #results = self.vs.vector_search_knn(self.query)
         else:
             boost = {'question': 3.0, 'section': 0.5}
             index = self.index
@@ -106,7 +81,7 @@ class ragModel:
     def build_prompt(self):
         query = self.query
         search_results = self.search()
-        print('***************'); print(search_results)
+        #print('***************'); print(search_results)
         prompt_template = """
         You're a course teaching assistant. Answer the QUESTION based on the CONTEXT from the FAQ database.
         Use only the facts from the CONTEXT when answering the QUESTION.
@@ -127,7 +102,9 @@ class ragModel:
 
     def getModel(self):
 
-        from tensorflow.keras import mixed_precision
+        #from tensorflow.keras import mixed_precision
+        from tensorflow.python.keras import mixed_precision
+
         mixed_precision.set_global_policy('mixed_float16')  # or 'mixed_bfloat16'
 
         tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-xl")
