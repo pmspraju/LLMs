@@ -1,0 +1,19 @@
+# Core deep learning
+torch>=2.1
+torchvision>=0.16
+
+# Diffusion model components (UNet / VAE / schedulers / LoRA integration)
+diffusers>=0.27
+transformers>=4.38
+peft>=0.10          # LoRA adapters for local_debug mode
+
+# Data
+datasets>=2.18
+Pillow>=10.0
+
+# Utilities
+tqdm>=4.66
+matplotlib>=3.8     # used later for the comparison plots (step 5)
+
+# Optional experiment tracking (only imported if --use_wandb is passed)
+# wandb>=0.16
