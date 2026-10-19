@@ -1,6 +1,6 @@
 # Distributed Fine-Tuning of Stable Diffusion 1.5 — A Learning Project
 
-Fine-tuning **Stable Diffusion 1.5** on the **`lambdalabs/pokemon-blip-captions`**
+Fine-tuning **Stable Diffusion 1.5** on the **`diffusers/pokemon-gpt4-captions`**
 dataset as a vehicle for learning **distributed training in PyTorch** (DDP → FSDP).
 
 > **Primary goal: understand distributed-training mechanics.** Fine-tuned model
@@ -15,7 +15,7 @@ dataset as a vehicle for learning **distributed training in PyTorch** (DDP → F
 | Aspect | Decision | Why |
 |---|---|---|
 | **Model** | SD 1.5 via Hugging Face `diffusers` (UNet / VAE / scheduler) | The diffusion loop must be *reliable* so bugs I hit are distributed-training bugs, not noise-schedule bugs |
-| **Dataset** | `lambdalabs/pokemon-blip-captions` (~800 images) | Small and fast to iterate |
+| **Dataset** | `diffusers/pokemon-gpt4-captions` (`train` split) | Small and fast to iterate |
 | **Training type** | **FULL UNet fine-tune** (not LoRA) for the real runs | Deliberately induce single-GPU memory pressure so **FSDP sharding is meaningful**, not just DDP on an already-tiny model. LoRA is a later cheap comparison |
 | **Local HW** | RTX 4080 (16 GB) — **debug only** | Full fine-tune won't fit in 16 GB → local runs use **LoRA + reduced config** to catch bugs before spending cloud money |
 | **Cloud HW** | Lambda Labs A6000 (48 GB), 1→4 GPUs | On-demand; budget ~$150–200 |
@@ -51,7 +51,7 @@ stable diffusion/
     ├── config.py               # local_debug / cloud_full presets (dataclass)
     ├── dist_utils.py           # rank helpers — already rank-0 aware
     ├── logging_utils.py        # CSVLogger + optional W&B + GPU-mem probes
-    ├── data.py                 # pokemon-blip-captions pipeline (+ DistributedSampler hook)
+    ├── data.py                 # Pokémon captions pipeline (+ DistributedSampler hook)
     ├── models.py               # load SD1.5, freeze VAE/text-enc, LoRA-or-full UNet
     └── samples.py              # fixed-prompt classifier-free-guidance sampling grid
 ```
@@ -165,6 +165,50 @@ $$\mathcal{L} = \mathbb{E}_{z_0,\epsilon,t}\big[\,\lVert \epsilon_\theta(z_t, t,
 Only $\theta$ (UNet, or its LoRA adapters) receives gradients; VAE and text encoder
 are frozen in [`models.py`](sdtrain/models.py#L33-L36).
 
+### 4.1 How the inputs reach the UNet
+
+The three inputs are prepared separately and meet at the UNet call in
+[`compute_loss`](train_baseline.py#L142):
+
+| Path | Preparation | Where it enters the UNet |
+|---|---|---|
+| **Image latent** | Images are transformed into `pixel_values` in [`data.py`](sdtrain/data.py#L54-L60), moved to the device and encoded by the VAE in [`train_baseline.py`](train_baseline.py#L115-L119), then noised at [`train_baseline.py`](train_baseline.py#L128). | `noisy_latents` is argument 1 at [`train_baseline.py`](train_baseline.py#L142). |
+| **Timestep** | Sampled at [`train_baseline.py`](train_baseline.py#L125-L127); also used by the scheduler when it adds noise at [`train_baseline.py`](train_baseline.py#L128). | `timesteps` is argument 2 at [`train_baseline.py`](train_baseline.py#L142). |
+| **Text** | Captions are tokenized in [`data.py`](sdtrain/data.py#L55-L60); `input_ids` are moved to the device and encoded by CLIP in [`train_baseline.py`](train_baseline.py#L116-L131). | `encoder_hidden_states` is argument 3 at [`train_baseline.py`](train_baseline.py#L142). |
+
+These are separate arguments, not one concatenated tensor. The components
+involved are:
+
+| Component | Role in this training loop |
+|---|---|
+| **Tokenizer** | Converts each caption into token IDs. Loaded in [`models.py`](sdtrain/models.py#L36) and applied to captions in [`data.py`](sdtrain/data.py#L55-L60). |
+| **Text encoder** | CLIP converts token IDs into contextual token embeddings (`encoder_hidden_states`), which condition image denoising. The forward call is in [`train_baseline.py`](train_baseline.py#L131); its weights are frozen in [`models.py`](sdtrain/models.py#L54). |
+| **VAE** | Encodes training pixels into a compact image latent. The forward call is in [`train_baseline.py`](train_baseline.py#L119); its weights are frozen in [`models.py`](sdtrain/models.py#L53). At generation time, the VAE performs the reverse mapping from latent to pixels. |
+| **Noise scheduler** | Defines the training noising process: adds noise at the sampled timestep and determines whether the UNet target is noise (`epsilon`) or velocity (`v_prediction`). See [`train_baseline.py`](train_baseline.py#L128) and [`train_baseline.py`](train_baseline.py#L135-L138); the scheduler is loaded in [`models.py`](sdtrain/models.py#L48). |
+| **UNet** | Predicts the scheduler's target from the noisy latent, timestep, and text embeddings. It is loaded in [`models.py`](sdtrain/models.py#L45); training calls it at [`train_baseline.py`](train_baseline.py#L142). The UNet, or its LoRA adapters, is the trainable component. |
+
+### How the UNet combines the inputs
+
+The UNet is a conditional encoder-decoder. A convolution turns the noisy image
+latent into feature maps. These pass through a **down path**, a **middle block**,
+and an **up path**; skip connections carry features from each down-path
+resolution to the matching up-path resolution, helping preserve spatial detail.
+
+The timestep is embedded into a vector and injected into residual blocks across
+the network, so the UNet can adapt its prediction to the current noise level.
+Text embeddings enter through **cross-attention** layers: image features act as
+queries, while text tokens provide keys and values. This lets spatial features
+attend to caption tokens relevant to what they are denoising. The final UNet
+output has the latent's spatial shape and is compared with the target selected
+by the noise scheduler.
+
+At a typical 512x512 input resolution, the VAE latent is shaped approximately
+`B x 4 x 64 x 64`; the text encoder produces up to 77 token embeddings of width
+768. The timestep is a scalar per example before the UNet converts it to its
+conditioning embedding. These internal down/middle/up, timestep-injection, and
+cross-attention operations are implemented by Diffusers'
+`UNet2DConditionModel`, rather than by code in this repository.
+
 ---
 
 ## 5. Metrics Tracked
@@ -187,7 +231,7 @@ Written by [`CSVLogger`](sdtrain/logging_utils.py#L38-L54); columns defined in
 | CSV column | Symbol / formula | Source | What it tells me |
 |---|---|---|---|
 | `step` | global optimizer step | loop counter | x-axis for every plot |
-| `epoch` | passes over the ~800-image set | `infinite_loader` | context for loss dips |
+| `epoch` | passes over the configured training split | `infinite_loader` | context for loss dips |
 | `loss` | $\frac{1}{A}\sum \mathcal{L}_{\text{micro}}$ (A = accum steps) | `accum_loss / accum` | learning signal; **must match across baseline/DDP/FSDP** |
 | `lr` | current LR incl. warmup | `lr_scheduler.get_last_lr()[0]` | verify warmup + LR scaling when GPU count changes |
 | `grad_norm` | $\lVert g \rVert_2$ **pre-clip** | `clip_grad_norm_(...)` return | sanity-check gradient **sync** across ranks |
@@ -257,21 +301,23 @@ re-upload; the original `runwayml/...` repo was removed from the Hub).
 
 ### 7.1 `max_train_steps` is not the same as epochs
 
-An **epoch** = one full traversal of all ~833 images. A **step** = one optimizer
-update, consuming `train_batch_size` images. The relationship is:
+An **epoch** = one full traversal of the configured `train` split. A **step** =
+one optimizer update, consuming `train_batch_size` images per accumulation step.
+The relationship is:
 
 $$\text{steps per epoch} = \left\lfloor \frac{N_{\text{dataset}}}{B \cdot A} \right\rfloor$$
 
 where $B$ = `train_batch_size`, $A$ = `gradient_accumulation_steps`.
 
-| Mode | Dataset $N$ | Batch $B$ | Accum $A$ | Steps / epoch | `max_train_steps` | Epochs completed |
-|---|---|---|---|---|---|---|
-| `local_debug` | 833 | 1 | 1 | **833** | 100 | **0.12** — never finishes one epoch |
-| `cloud_full` | 833 | 4 | 1 | **208** | 3000 | **~14.4** |
+| Mode | Batch $B$ | Accum $A$ | Steps / epoch | `max_train_steps` |
+|---|---|---|---|---|
+| `local_debug` | 1 | 1 | $\lfloor N / 1 \rfloor$ | 100 |
+| `cloud_full` | 4 | 1 | $\lfloor N / 4 \rfloor$ | 3000 |
 
-`local_debug` at 100 steps sees only 12 % of the dataset *once* — intentional,
-because the goal is pipeline correctness, not actual learning. `cloud_full` at
-3000 steps sees the data ~14 times, a reasonable number for fine-tuning on ~800 images.
+Here, $N$ is the number of examples in the configured training split. Both modes
+load that full split; `local_debug` does not select a smaller subset. Its 100-step
+limit is for pipeline correctness, not full training. The loader cycles through
+the split as needed until `max_train_steps` is reached.
 
 The training loop uses [`infinite_loader`](train_baseline.py) — the dataloader
 cycles forever and is terminated by `max_train_steps`, **not** by epoch boundaries.
